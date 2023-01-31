@@ -1,0 +1,245 @@
+#!/bin/bash
+
+#Suite de tratamento da base H2 para o dependency check
+#Nesta suite e possivel inicializar, parar, verificar status (se está online ou não), realizar backup e restore da base.
+#Escrito por: Rigel Forneris Dos Santos
+#30/01/2023
+
+now=$(date +"%y-%m-%d %H:%M:%S")
+
+log="./logs/h2.log"
+h2_path="../h2/bin/"
+h2_backup_dump="./backups"
+h2_backup_path="../dependency-check/data"
+filename=$(date "+%Y%m%d%H%m%s")
+h2_backup_file="$h2_backup_dump/$filename.h2_backup.tar.gz"
+
+#Função que Verifica o processo do H2
+h2_status()
+{   #Zera a variavel request status, variavel utilizada para sinalizar status do final de cada função
+    request_status=0
+    #busca o process ID
+    proc=$(ps auxf | grep h2 | grep -v "grep" | grep "java" | awk '{print $2}')
+
+    #Analiza se PID está nulo, o que significaria que o serviço h2 está fora, senão, o serviço h2 esta online.
+    if [ -z $proc ];then
+        echo "h2 service is down!"
+        request_status=2
+    elif ! [ -z $proc ];then
+        echo "h2 service is up!"
+        request_status=0
+    else
+        echo "Status is UNKNOWN!"
+        request_status=3
+    fi
+}
+
+#Inicializador do serviço de H2
+h2_start(){
+    #Zera a variavel request status, variavel utilizada para sinalizar status do final de cada função
+    request_status=0
+    echo "$now - Starting service..." | tee -a $log
+    #Comando de inicialização do serviço
+    nohup java -jar $h2_path/h2-*.jar -webAllowOthers -tcpAllowOthers &>> $log &
+    #Aguarda 5 segundos após a incialização para verificar se o serviço está online
+    sleep 5
+    #Identifica se há processo rodando pelo numero de linhas correspondentes ao comando abaixo
+    p_check=$(ps auxf | grep h2 | grep -v "grep"  | grep "java" | wc -l)
+
+    #Verifica se a quantidade de linhas e maior que zero, se for é porque o serviço está rodando, se for igual a zero o serviço está fora
+    if [ $p_check -gt 0 ];then
+        echo "$now - Service started successfully!" | tee -a $log
+        request_status=0
+    else
+        echo "$now - Service failed to start!" | tee -a $log
+        request_status=2
+    fi
+}
+
+#Função que para o serviço h2
+h2_stop(){
+    #Zera a variavel request status, variavel utilizada para sinalizar status do final de cada função
+    request_status=0
+    echo "$now - Hold on, im stopping the service..." | tee -a $log
+
+    #identifica o número do process ID
+    proc=$(ps auxf | grep h2 | grep -v "grep" | grep "java" | awk '{print $2}')
+    #Identica se o PID está nulo, se estiver é porque o serviço já está parado   
+    if [ -z $proc ] ;then
+        echo "$now - Oh, the service already stopped!" | tee -a $log
+        request_status=2
+      fi
+    
+    if [ $request_status -eq 0 ];then
+        #comando que mata o processo, o -15 significa "graceful stop" para evitar corrompimentos
+        kill -15 $proc &> /dev/null
+        #Aguarda 5 segundos após o comando
+        sleep 5
+    fi
+    
+    #Verifica se a quantidade de linhas e maior que zero, se for é porque o serviço está rodando, se for igual a zero o serviço está fora
+    p_check=$(ps auxf | grep h2 | grep -v "grep"  | grep "java" | wc -l)
+    
+    #Verifica se a quantidade de linhas e maior que zero, se for é porque o serviço está rodando, se for igual a zero o serviço está fora
+    if [ $p_check -gt 0 ] && [ request_status -eq 0 ] ;then
+        echo "$now - System remains online after 5sec waiting! Please check yourself if the system is up or down or run ./h2 status!" | tee -a $log
+        request_status=2
+    elif  [ $request_status -eq 0 ];then
+        echo "$now - Service stopped successfully!" | tee -a $log
+        request_status=0
+    fi
+}
+
+#Função que realiza o backup
+h2_backup()
+{
+        #Zera a variavel request status, variavel utilizada para sinalizar status do final de cada função
+        request_status=0
+        echo "H2 system backup initialized..." | tee -a $log
+        echo " "
+        echo "Warning, This will stop the H2 database, do the backup and start the h2 database again (i promise), this may take a few minutes..."
+        echo " "
+        echo "Are you sure? (y/n)"
+
+        #loop de confirmação, aguarda pela confirmação do usuário
+        while true;do
+            read resp
+            if [ -z $resp ] || [ $resp == "n" ] || [ $resp == "N" ];then
+                echo "user canceled the backup routine."
+                exit 0
+
+            elif [ $resp == "y" ] || [ $resp == "Y" ] ;then
+                clear
+                echo "Okidoki! Stopping the h2 database! Brace yourselves"   
+                #Chama pela função que para o serviço H2             
+                stop_service=$(h2_stop)
+                #Busca o status do serviço do H2 para continuar ou não
+                db_status=$(h2_status | wc -c)
+                
+                #Faz a verificação do status do H2
+                if [ $db_status -eq 20 ];then
+                    echo "Okay! Database stopped!"
+                elif [ $db_status -eq 18 ];then
+                    echo "Oh no! I cant stop the database! You need to verify manually!"
+                    exit 2
+                fi
+                
+                echo "wait for it... creating the backups"
+                
+                #Inicia a compactação dos arquivos
+                tar -cvzf $h2_backup_file $h2_backup_path &> /dev/null
+                echo "alright! I Done the backup, let me startup the base again..."
+                #Chama a função que inicializa o banco
+                h2_start
+                #Aguarda 5 segundos para verificar se a base ja está de pé
+                sleep 5
+                if [ $db_status -eq 20 ];then
+                    echo "Database is on again! =D"
+                elif [ $db_status -eq 18 ];then
+                    echo "Yikes! I cant verify if the database is up. You need to verify that manually!"
+                    echo "Also verify if the file $h2_backup_file has been created and if the H2 service is up!" | tee -a $log
+                    exit 2
+                fi
+
+                #informa o nome do arquivo criado
+                echo "backup finished on $h2_backup_file !" | tee -a $log
+                
+            
+            else
+                echo "Just answer (Y/N)"
+                continue
+            fi
+            break
+        done
+    
+}
+
+#função que faz a restauração baseado no último arquivo
+h2_restore()
+{
+        request_status=0
+        echo "H2 backup restauration initialized..." | tee -a $log
+        echo " "
+        echo "Warning, This will stop, restore and startup the restored database, this may take a few minutes..."
+        echo " "
+        echo "Are you sure? (y/n)"
+        #loop de confirmação, aguarda pela confirmação do usuário
+        while true;do
+            read resp
+            if [ -z $resp ] || [ $resp == "n" ] || [ $resp == "N" ];then
+                echo "user canceled the restore routine."
+                exit 0
+
+            elif [ $resp == "y" ] || [ $resp == "Y" ] ;then
+                clear
+                echo "okay then! Stopping the h2 database, hold on!"
+                #Chama pela função que para o serviço H2 
+                stop_service=$(h2_stop)
+                #Busca o status do serviço do H2 para continuar ou não
+                db_status=$(h2_status | wc -c)
+                
+                #Faz a verificação do status do H2
+                if [ $db_status -eq 20 ];then
+                    echo "Okay! Database stopped!"
+                elif [ $db_status -eq 18 ];then
+                    echo "Oh no! I cant stop the database! You need to verify manually!"
+                    exit 2
+                fi
+                echo "Starting the restore..."
+                #pega o nome do ultimo arquivo dentro da pasta de backup
+                file_to_restore=$(ls -lst $h2_backup_dump | grep -v "total" | head -n1 | awk '{print $10}') 
+                #modifica a pasta aonde está as base do H2 para um nome baseado na data e hora de execução
+                mv $h2_backup_path $h2_backup_path.$filename
+                #cria uma nova pasta data no local
+                mkdir $h2_backup_path
+                #Cria uma área de transferência temporária dentro da pasta de backup
+                mkdir $h2_backup_dump/temp
+                #Faz a descompactação dos arquivos
+                tar xvzf $h2_backup_dump/$file_to_restore -C $h2_backup_dump/temp &>/dev/null
+                #Movimenta os dados de restauração para a pasta de destino
+                mv $h2_backup_dump/temp/dependency-check/data/*  $h2_backup_path
+                #Remove a área de transferência temporária
+                rm -rf $h2_backup_dump/temp
+
+                echo "alright! I Done the restore, let me startup the base again..."
+                #Chama a função que inicializa o banco
+                h2_start
+                #Aguarda 5 segundos para verificar se a base ja está de pé
+                sleep 5
+                if [ $db_status -eq 20 ];then
+                    echo "Database is on again! =D"
+                elif [ $db_status -eq 18 ];then
+                    echo "Yikes! I cant verify if the database is up. You need to verify that manually!"
+                    echo "Also verify if the file $h2_backup_file has been created and if the H2 service is up!" | tee -a $log
+                    exit 2
+                fi                
+                echo "restore finished!!" | tee -a $log
+
+            else
+                echo "Just answer (Y/N)"
+                continue
+            fi
+            break
+        done
+}
+#Verifica se houve uso de argumento no comando
+if [ -z $1 ];then
+    echo "Usage: h2 <start|stop>"
+    exit 2
+#Verifica se o argumento está dentro dos argumentos esperados
+elif ! [ $1 == "start" ] && ! [ $1 == "stop" ] && ! [ $1 == "status" ] && ! [ $1 == "backup" ] && ! [ $1 == "restore" ];then
+    echo "Usage: h2 <start|stop>"
+    exit 2
+#inicializador de função conforme comando inserido
+elif [ $1 == "start" ];then  
+    h2_start
+elif [ $1 == "stop" ];then
+    h2_stop
+elif [ $1 == "status" ];then
+    h2_status
+elif [ $1 == "backup" ];then
+    h2_backup   
+elif [ $1 == "restore" ];then
+    h2_restore
+fi
+
