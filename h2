@@ -2,7 +2,7 @@
 
 #Suite de tratamento da base H2 para o dependency check
 #Nesta suite e possivel inicializar, parar, verificar status (se está online ou não), realizar backup e restore da base.
-#Escrito por: Rigel Forneris Dos Santos, chave M336238
+#Escrito por: Rigel Forneris Dos Santos
 #30/01/2023
 
 now=$(date +"%y-%m-%d %H:%M:%S")
