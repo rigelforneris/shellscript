@@ -2,7 +2,7 @@
 
 #Suite de tratamento da base H2 para o dependency check
 #Nesta suite e possivel inicializar, parar, verificar status (se está online ou não), realizar backup e restore da base.
-#Escrito por: Rigel Forneris Dos Santos
+#Escrito por: Rigel Forneris Dos Santos, chave M336238
 #30/01/2023
 
 now=$(date +"%y-%m-%d %H:%M:%S")
@@ -20,7 +20,7 @@ h2_restore_folder="../dependency-check/data"
 #Pequena função que cria uma string aleatória para ser utilizada por outras funções
 filename=$(date "+%Y%m%d%H%m%s")
 #Nome do arquivo de backup que será gerado
-h2_backup_file="$h2_backup_dump/$filename.h2_backup.tar.gz"
+h2_backup_filename="$h2_backup_dump/$filename.h2_backup.tar.gz"
 #Caminho do binario do dependency check
 dpck_bin="../dependency-check/bin/dependency-check.sh"
 
@@ -137,7 +137,7 @@ h2_backup()
                 echo "wait for it... creating the backups"
                 
                 #Inicia a compactação dos arquivos
-                tar cvzf $h2_backup_file $h2_backup_file &> /dev/null 
+                tar cvzf $h2_backup_filename $h2_backup_file &> /dev/null
                 echo "alright! I Done the backup, let me startup the base again..."
                 #Chama a função que inicializa o banco
                 h2_start
@@ -197,23 +197,21 @@ h2_restore()
                 fi
                 echo "Starting the restore..."
                 #pega o nome do ultimo arquivo dentro da pasta de backup
-                file_to_restore=$(ls -lst $h2_backup_dump | grep -v "total" | head -n1 | awk '{print $10}') 
-                #modifica a pasta aonde está as base do H2 para um nome baseado na data e hora de execução
+                file_to_restore=$(ls -lst $h2_backup_dump | grep -v "total" | head -n1 | awk '{print $10}')                 
+                #modifica o arquivo de base de dados (odc.mv.db)
+
                 mv $h2_backup_file $h2_backup_file.$filename
+               
                 #cria uma nova pasta data no local
-                mkdir $h2_backup_file
+                #mkdir $h2_backup_file
                 #Cria uma área de transferência temporária dentro da pasta de backup
-                mkdir $h2_backup_dump/temp
+                #mkdir $h2_backup_dump/temp
 
                 #Faz a descompactação dos arquivos
-                tar xvzf $h2_backup_dump/$file_to_restore -C $h2_restore_folder --strip-components=2
-                
-
-                #DEPRECATED Movimenta os dados de restauração para a pasta de destino
-                #mv $h2_backup_dump/temp/dependency-check/data/odc.mv.db/odc.mv.db  $h2_backup_file
+                tar xvzf $h2_backup_dump/$file_to_restore -C $h2_restore_folder --strip-components=2 &> /dev/null
                 
                 #Remove a área de transferência temporária
-                rm -rf $h2_backup_dump/temp
+                #rm -rf $h2_backup_dump/temp
 
                 echo "alright! I Done the restore, let me startup the base again..."
                 #Chama a função que inicializa o banco
