@@ -7,13 +7,21 @@
 
 now=$(date +"%y-%m-%d %H:%M:%S")
 
+#Log de saída para o binário.
 log="./logs/h2.log"
+#Caminho do binário do h2
 h2_path="../h2/bin/"
+#Caminho para se armazenar os logs
 h2_backup_dump="./backups"
+#Caminho para apontar o local do arquivo de banco de dados do H2 (no dependency check)
 h2_backup_file="../dependency-check/data/odc.mv.db"
+#Caminho para apontar para onde o restore será feito
 h2_restore_folder="../dependency-check/data"
+#Pequena função que cria uma string aleatória para ser utilizada por outras funções
 filename=$(date "+%Y%m%d%H%m%s")
+#Nome do arquivo de backup que será gerado
 h2_backup_file="$h2_backup_dump/$filename.h2_backup.tar.gz"
+#Caminho do binario do dependency check
 dpck_bin="../dependency-check/bin/dependency-check.sh"
 
 #Função que Verifica o processo do H2
