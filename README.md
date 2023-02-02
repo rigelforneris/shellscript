@@ -6,6 +6,8 @@ Sintaxe básica: h2 <parâmetro>
 
 h2 <status|start|stop|backup|restore|update>
 
+
+
 Exemplos de uso:
 
 h2 status - Informa o status do banco
